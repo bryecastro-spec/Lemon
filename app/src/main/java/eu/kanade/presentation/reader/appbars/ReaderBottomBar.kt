@@ -62,7 +62,11 @@ fun ReaderBottomBar(
 
         IconButton(onClick = onToggleAutoScroll) {
             Icon(
-                imageVector = if (isAutoScroll) MaterialSymbols.RoundedFilled.Pause else MaterialSymbols.RoundedFilled.PlayArrow,
+                imageVector = if (isAutoScroll) {
+                    MaterialSymbols.RoundedFilled.Pause
+                } else {
+                    MaterialSymbols.RoundedFilled.PlayArrow
+                },
                 contentDescription = stringResource(MR.strings.action_auto_scroll),
             )
         }
