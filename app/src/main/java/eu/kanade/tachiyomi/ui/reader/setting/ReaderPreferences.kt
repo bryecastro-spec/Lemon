@@ -243,6 +243,20 @@ class ReaderPreferences(
 
     // endregion
 
+    // region Auto-scroll
+
+    val autoscrollInterval: Preference<Float> = preferenceStore.getFloat("eh_util_autoscroll_interval", 3f)
+
+    val smoothAutoScroll: Preference<Boolean> = preferenceStore.getBoolean("smooth_auto_scroll", true)
+
+    val autoscrollGesturesEnabled: Preference<Boolean> =
+        preferenceStore.getBoolean("eh_util_autoscroll_gestures", false)
+
+    val autoscrollGestureToastsEnabled: Preference<Boolean> =
+        preferenceStore.getBoolean("eh_util_autoscroll_gesture_toasts", true)
+
+    // endregion
+
     enum class FlashColor {
         BLACK,
         WHITE,

@@ -3,6 +3,8 @@ package eu.kanade.tachiyomi.ui.reader.viewer.webtoon
 import android.graphics.ColorFilter
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.animation.LinearInterpolator
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
@@ -25,14 +27,22 @@ import eu.kanade.tachiyomi.ui.reader.viewer.LongStripSettings
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageImageView
 import eu.kanade.tachiyomi.ui.reader.viewer.Viewer
 import eu.kanade.tachiyomi.ui.reader.viewer.collectChanges
+import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import mihon.app.di.appGraph
+import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.i18n.MR
 import java.util.Collections
+import java.util.Locale
 import java.util.WeakHashMap
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToLong
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Implementation of a [Viewer] to display pages with a [RecyclerView].
@@ -98,6 +108,17 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
         readerPreferences.readerHideThreshold.get().threshold,
     )
 
+    // Auto-scroll state
+    private var autoScrollEnabled = false
+    private var autoScrollPaused = false
+    private var autoScrollHasRuntimeSpeedOverride = false
+    private var autoScrollIntervalMillis = DEFAULT_AUTO_SCROLL_INTERVAL_MILLIS
+    private var interruptAutoScrollDelay = false
+    private var autoScrollToast: Toast? = null
+    private var autoScrollUiBlocked = false
+    private var autoScrollGesturesEnabled = true
+    private var autoScrollGestureToastsEnabled = true
+
     init {
         recycler.sidePaddingPercent = simpleLongStrip.page.sidePadding
         recycler.setItemViewCacheSize(RECYCLER_VIEW_CACHE_SIZE)
@@ -107,6 +128,21 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
         recycler.itemAnimator = null
         recycler.layoutManager = layoutManager
         recycler.adapter = adapter
+        recycler.autoScrollTogglePauseListener = {
+            toggleAutoScrollPause()
+        }
+        recycler.autoScrollActivateListener = {
+            startAutoScrollFromGesture()
+        }
+        recycler.autoScrollStopListener = {
+            stopAutoScrollFromGesture()
+        }
+        recycler.autoScrollSpeedChangeListener = { deltaSteps ->
+            adjustAutoScrollSpeed(deltaSteps)
+        }
+        recycler.autoScrollInteractionListener = {
+            consumeAutoScrollDelayInterrupt()
+        }
         recycler.addOnScrollListener(
             object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
@@ -203,6 +239,187 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
         scope.cancel()
     }
 
+    // region Auto-scroll
+
+    fun syncAutoScrollSettings(enabled: Boolean, interval: Duration, forceInterval: Boolean = false) {
+        val intervalMillis =
+            interval.inWholeMilliseconds
+                .coerceIn(MIN_AUTO_SCROLL_INTERVAL_MILLIS, MAX_AUTO_SCROLL_INTERVAL_MILLIS)
+
+        if (!enabled) {
+            autoScrollEnabled = false
+            autoScrollPaused = false
+            autoScrollHasRuntimeSpeedOverride = false
+            interruptAutoScrollDelay = false
+            recycler.stopScroll()
+            updateAutoScrollGestureMode()
+            return
+        }
+
+        if (!autoScrollEnabled || forceInterval) {
+            autoScrollIntervalMillis = intervalMillis
+            autoScrollHasRuntimeSpeedOverride = false
+            autoScrollPaused = false
+        } else if (!autoScrollHasRuntimeSpeedOverride) {
+            autoScrollIntervalMillis = intervalMillis
+        }
+
+        autoScrollEnabled = true
+        updateAutoScrollGestureMode()
+    }
+
+    fun setAutoScrollUiBlocked(blocked: Boolean) {
+        autoScrollUiBlocked = blocked
+        if (blocked) {
+            recycler.stopScroll()
+            interruptAutoScrollDelay = true
+        }
+        updateAutoScrollGestureMode()
+    }
+
+    fun setAutoScrollGesturesEnabled(enabled: Boolean) {
+        autoScrollGesturesEnabled = enabled
+        updateAutoScrollGestureMode()
+    }
+
+    fun setAutoScrollGestureToastsEnabled(enabled: Boolean) {
+        autoScrollGestureToastsEnabled = enabled
+        if (!enabled) {
+            autoScrollToast?.cancel()
+            autoScrollToast = null
+        }
+    }
+
+    fun performAutoScrollStep(smooth: Boolean) {
+        if (
+            !autoScrollEnabled ||
+            autoScrollPaused ||
+            recycler.isAutoScrollGestureInProgress() ||
+            autoScrollUiBlocked
+        ) {
+            return
+        }
+
+        if (smooth) {
+            linearScroll(autoScrollIntervalMillis.milliseconds)
+        } else {
+            moveForward()
+        }
+    }
+
+    fun autoScrollDelayMillis(): Long {
+        return if (autoScrollPaused || autoScrollUiBlocked || recycler.isAutoScrollGestureInProgress()) {
+            AUTO_SCROLL_POLL_DELAY_MILLIS
+        } else {
+            autoScrollIntervalMillis
+        }
+    }
+
+    fun consumeAutoScrollDelayInterrupt(): Boolean {
+        val shouldInterrupt = interruptAutoScrollDelay
+        interruptAutoScrollDelay = false
+        return shouldInterrupt
+    }
+
+    fun linearScroll(duration: Duration) {
+        recycler.smoothScrollBy(
+            0,
+            activity.resources.displayMetrics.heightPixels,
+            LinearInterpolator(),
+            duration.inWholeMilliseconds.toInt(),
+        )
+    }
+
+    private fun toggleAutoScrollPause() {
+        if (!autoScrollEnabled) return
+
+        autoScrollPaused = !autoScrollPaused
+        interruptAutoScrollDelay = true
+        recycler.stopScroll()
+
+        val action = if (autoScrollPaused) {
+            activity.stringResource(MR.strings.action_pause)
+        } else {
+            activity.stringResource(MR.strings.action_resume)
+        }
+        showAutoScrollToast("${activity.stringResource(MR.strings.action_auto_scroll)}: $action")
+    }
+
+    private fun stopAutoScrollFromGesture() {
+        if (!autoScrollEnabled) return
+
+        autoScrollEnabled = false
+        autoScrollPaused = false
+        autoScrollHasRuntimeSpeedOverride = false
+        interruptAutoScrollDelay = true
+        updateAutoScrollGestureMode()
+        recycler.stopScroll()
+        activity.viewModel.toggleAutoScroll(false)
+        showAutoScrollToast(
+            "${activity.stringResource(MR.strings.action_auto_scroll)}: " +
+                activity.stringResource(MR.strings.action_stop),
+        )
+    }
+
+    private fun adjustAutoScrollSpeed(steps: Int) {
+        if (!autoScrollEnabled || steps == 0) return
+
+        recycler.stopScroll()
+        interruptAutoScrollDelay = true
+        autoScrollHasRuntimeSpeedOverride = true
+
+        var newInterval = autoScrollIntervalMillis.toDouble()
+        repeat(abs(steps)) {
+            newInterval *= if (steps > 0) {
+                AUTO_SCROLL_SPEED_UP_FACTOR
+            } else {
+                AUTO_SCROLL_SPEED_DOWN_FACTOR
+            }
+        }
+
+        autoScrollIntervalMillis =
+            newInterval.roundToLong().coerceIn(
+                MIN_AUTO_SCROLL_INTERVAL_MILLIS,
+                MAX_AUTO_SCROLL_INTERVAL_MILLIS,
+            )
+
+        showAutoScrollToast(
+            "${activity.stringResource(MR.strings.action_auto_scroll)}: ${formatAutoScrollInterval()}",
+        )
+    }
+
+    private fun formatAutoScrollInterval(): String {
+        val seconds = autoScrollIntervalMillis / 1000f
+        val pattern = if (seconds < 10f) "%.2fs" else "%.1fs"
+        return String.format(Locale.getDefault(), pattern, seconds)
+    }
+
+    private fun showAutoScrollToast(message: String) {
+        if (!autoScrollGestureToastsEnabled) return
+        autoScrollToast?.cancel()
+        autoScrollToast = activity.toast(message)
+    }
+
+    private fun startAutoScrollFromGesture() {
+        if (autoScrollEnabled || readerPreferences.autoscrollInterval.get() <= 0f) return
+        activity.viewModel.toggleAutoScroll(true)
+        showAutoScrollToast(
+            "${activity.stringResource(MR.strings.action_auto_scroll)}: " +
+                activity.stringResource(MR.strings.action_start),
+        )
+    }
+
+    private fun updateAutoScrollGestureMode() {
+        val gesturesAvailable = autoScrollGesturesEnabled && !autoScrollUiBlocked
+        recycler.autoScrollGestureModeEnabled = gesturesAvailable && autoScrollEnabled
+        recycler.autoScrollActivationGestureEnabled =
+            gesturesAvailable &&
+            !autoScrollEnabled &&
+            readerPreferences.autoscrollInterval.get() > 0f
+    }
+
+    // endregion
+
     /**
      * Tells this viewer to set the given [chapters] as active.
      */
@@ -275,3 +492,11 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
 
 // Double the cache size to reduce rebinds/recycles incurred by the extra layout space on scroll direction changes
 private const val RECYCLER_VIEW_CACHE_SIZE = 4
+
+// Auto-scroll constants
+private const val AUTO_SCROLL_POLL_DELAY_MILLIS = 100L
+private const val DEFAULT_AUTO_SCROLL_INTERVAL_MILLIS = 3_000L
+private const val MIN_AUTO_SCROLL_INTERVAL_MILLIS = 250L
+private const val MAX_AUTO_SCROLL_INTERVAL_MILLIS = 9_999_000L
+private const val AUTO_SCROLL_SPEED_UP_FACTOR = 0.9
+private const val AUTO_SCROLL_SPEED_DOWN_FACTOR = 1.1

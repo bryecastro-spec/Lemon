@@ -105,6 +105,13 @@
     <string name="action_remove_everything">Remove everything</string>
     <string name="action_start">Start</string>
     <string name="action_resume">Resume</string>
+    <string name="action_stop">Stop</string>
+    <string name="action_auto_scroll">Auto-scroll</string>
+    <string name="pref_smooth_scroll">Smooth auto-scroll</string>
+    <string name="eh_autoscroll_gestures">Autoscroll gestures</string>
+    <string name="eh_autoscroll_gesture_toasts">Autoscroll gesture toasts</string>
+    <string name="pref_autoscroll_interval">Auto-scroll interval</string>
+    <string name="pref_autoscroll_interval_summary">%d seconds</string>
     <string name="action_open_in_browser">Open in browser</string>
     <string name="action_show_manga">Show entry</string>
     <string name="action_copy_to_clipboard">Copy to clipboard</string>
