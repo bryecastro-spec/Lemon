@@ -108,6 +108,7 @@ import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.view.setComposeContent
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -935,7 +936,7 @@ class ReaderActivity : BaseActivity() {
                 )
 
                 if (!enabled) return@mapLatest
-                while (isActive) {
+                while (currentCoroutineContext().isActive) {
                     if (!viewModel.state.value.menuVisible) {
                         viewer?.let { v ->
                             when (v) {
