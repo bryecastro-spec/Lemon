@@ -61,11 +61,13 @@ import androidx.core.net.toUri
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.zacsweers.metro.Inject
+import kotlinx.coroutines.isActive
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.reader.DisplayRefreshHost
 import eu.kanade.presentation.reader.OrientationSelectDialog
@@ -620,7 +622,13 @@ class ReaderActivity : BaseActivity() {
             },
             onClickSettings = viewModel::openSettingsDialog,
             isAutoScroll = state.autoScroll,
-            onToggleAutoScroll = { viewModel.toggleAutoScroll(!state.autoScroll) },
+            onToggleAutoScroll = {
+                val nextState = !state.autoScroll
+                viewModel.toggleAutoScroll(nextState)
+                if (nextState) {
+                    setMenuVisibility(false)
+                }
+            },
         )
     }
 
@@ -927,30 +935,28 @@ class ReaderActivity : BaseActivity() {
                 )
 
                 if (!enabled) return@mapLatest
-
-                repeatOnLifecycle(Lifecycle.State.STARTED) {
-                    while (true) {
-                        if (!viewModel.state.value.menuVisible) {
-                            viewer?.let { v ->
-                                when (v) {
-                                    is PagerViewer -> {
-                                        v.moveForward()
-                                        delay(interval)
-                                    }
-                                    is WebtoonViewer -> {
-                                        v.syncAutoScrollSettings(enabled = true, interval = interval)
-                                        v.performAutoScrollStep(readerPreferences.smoothAutoScroll.get())
-                                        delayAutoScroll(v.autoScrollDelayMillis(), v)
-                                    }
-                                    else -> delay(100)
+                while (isActive) {
+                    if (!viewModel.state.value.menuVisible) {
+                        viewer?.let { v ->
+                            when (v) {
+                                is PagerViewer -> {
+                                    v.moveForward()
+                                    delay(interval)
                                 }
-                            } ?: delay(100)
-                        } else {
-                            delay(100)
-                        }
+                                is WebtoonViewer -> {
+                                    v.syncAutoScrollSettings(enabled = true, interval = interval)
+                                    v.performAutoScrollStep(readerPreferences.smoothAutoScroll.get())
+                                    delayAutoScroll(v.autoScrollDelayMillis(), v)
+                                }
+                                else -> delay(100)
+                            }
+                        } ?: delay(100)
+                    } else {
+                        delay(100)
                     }
                 }
             }
+            .flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
             .launchIn(lifecycleScope)
     }
 
