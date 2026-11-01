@@ -77,6 +77,7 @@ import eu.kanade.presentation.reader.ReaderPageActionsDialog
 import eu.kanade.presentation.reader.ReaderPageIndicator
 import eu.kanade.presentation.reader.ReadingModeSelectDialog
 import eu.kanade.presentation.reader.appbars.ReaderAppBars
+import eu.kanade.presentation.reader.components.AutoScrollFloatingController
 import eu.kanade.presentation.reader.components.ChapterNavigatorType
 import eu.kanade.presentation.reader.settings.ReaderSettingsDialog
 import eu.kanade.tachiyomi.R
@@ -270,6 +271,28 @@ class ReaderActivity : BaseActivity() {
                 }
 
                 ReaderNavigationOverlay(state = navigationOverlayState)
+
+                val autoscrollFloatingControls by readerPreferences.autoscrollFloatingControls.collectAsState()
+                val autoscrollInterval by readerPreferences.autoscrollInterval.collectAsState()
+
+                AutoScrollFloatingController(
+                    visible = state.autoScroll && autoscrollFloatingControls && !state.menuVisible,
+                    isPlaying = state.autoScroll,
+                    intervalSeconds = autoscrollInterval.toInt(),
+                    onTogglePlay = { viewModel.toggleAutoScroll(!state.autoScroll) },
+                    onSpeedDown = {
+                        val newInterval = (autoscrollInterval - 1f).coerceAtLeast(1f)
+                        readerPreferences.autoscrollInterval.set(newInterval)
+                    },
+                    onSpeedUp = {
+                        val newInterval = (autoscrollInterval + 1f).coerceAtMost(30f)
+                        readerPreferences.autoscrollInterval.set(newInterval)
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(bottom = 24.dp, end = 16.dp),
+                )
 
                 AppBars(state = state)
             }
@@ -496,6 +519,24 @@ class ReaderActivity : BaseActivity() {
         val viewer = viewer ?: return false
         val navigation = settingsViewModel.navigation.value ?: return false
         val isUp = event.type == KeyEventType.KeyUp
+        if (viewModel.state.value.autoScroll && readerPreferences.autoscrollVolumeKeys.get()) {
+            if (event.key == Key.VolumeUp || event.key == Key.VolumeDown) {
+                if (isUp) {
+                    val current = readerPreferences.autoscrollInterval.get()
+                    val newInterval = if (event.key == Key.VolumeUp) {
+                        (current - 1f).coerceAtLeast(1f)
+                    } else {
+                        (current + 1f).coerceAtMost(30f)
+                    }
+                    readerPreferences.autoscrollInterval.set(newInterval)
+                    menuToggleToast?.cancel()
+                    menuToggleToast = toast(
+                        stringResource(MR.strings.autoscroll_speed_toast, newInterval.toInt()),
+                    )
+                }
+                return true
+            }
+        }
         val action = when (event.key) {
             Key.VolumeDown, Key.VolumeUp -> {
                 val general = settingsViewModel.general.value
@@ -543,6 +584,10 @@ class ReaderActivity : BaseActivity() {
      * Called from the viewer when it's tapped at [pos], given as a fraction of its size.
      */
     fun onViewerTap(pos: Offset) {
+        if (viewModel.state.value.autoScroll && readerPreferences.autoscrollTapToPause.get()) {
+            viewModel.toggleAutoScroll(false)
+            return
+        }
         val action = settingsViewModel.navigation.value?.getAction(pos) ?: Action.MENU
         when (action) {
             Action.MENU -> toggleMenu()

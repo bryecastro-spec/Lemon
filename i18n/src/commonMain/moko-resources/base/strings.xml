@@ -112,6 +112,10 @@
     <string name="eh_autoscroll_gesture_toasts">Autoscroll gesture toasts</string>
     <string name="pref_autoscroll_interval">Auto-scroll interval</string>
     <string name="pref_autoscroll_interval_summary">%d seconds</string>
+    <string name="pref_autoscroll_volume_keys">Volume keys adjust speed</string>
+    <string name="pref_autoscroll_tap_to_pause">Tap screen to pause</string>
+    <string name="pref_autoscroll_floating_controls">Show floating controller</string>
+    <string name="autoscroll_speed_toast">Auto-scroll: %1$ds</string>
     <string name="action_open_in_browser">Open in browser</string>
     <string name="action_show_manga">Show entry</string>
     <string name="action_copy_to_clipboard">Copy to clipboard</string>

@@ -255,6 +255,15 @@ class ReaderPreferences(
     val autoscrollGestureToastsEnabled: Preference<Boolean> =
         preferenceStore.getBoolean("eh_util_autoscroll_gesture_toasts", true)
 
+    val autoscrollVolumeKeys: Preference<Boolean> =
+        preferenceStore.getBoolean("pref_autoscroll_volume_keys", true)
+
+    val autoscrollTapToPause: Preference<Boolean> =
+        preferenceStore.getBoolean("pref_autoscroll_tap_to_pause", true)
+
+    val autoscrollFloatingControls: Preference<Boolean> =
+        preferenceStore.getBoolean("pref_autoscroll_floating_controls", true)
+
     // endregion
 
     enum class FlashColor {

@@ -74,6 +74,21 @@ internal fun ColumnScope.GeneralPage(viewModel: ReaderSettingsViewModel) {
         pref = viewModel.preferences.autoscrollGestureToastsEnabled,
     )
 
+    CheckboxItem(
+        label = stringResource(MR.strings.pref_autoscroll_volume_keys),
+        pref = viewModel.preferences.autoscrollVolumeKeys,
+    )
+
+    CheckboxItem(
+        label = stringResource(MR.strings.pref_autoscroll_tap_to_pause),
+        pref = viewModel.preferences.autoscrollTapToPause,
+    )
+
+    CheckboxItem(
+        label = stringResource(MR.strings.pref_autoscroll_floating_controls),
+        pref = viewModel.preferences.autoscrollFloatingControls,
+    )
+
     SettingsChipRow(MR.strings.pref_reader_theme) {
         themes.map { (labelRes, value) ->
             FilterChip(
